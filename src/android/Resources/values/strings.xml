@@ -1,0 +1,7 @@
+<resources>
+  <string name="app_name">SimpleTracker</string>
+  <string name="action_settings">Settings</string>
+  <string name="notification_text">The started service is running.</string>
+  <string name="cancel">Cancel</string>
+  <string name="save">Save</string>
+</resources>

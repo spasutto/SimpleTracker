@@ -1,0 +1,13 @@
+<FilesMatch "users.txt">
+  Order Allow,Deny
+  Deny from all
+</FilesMatch>
+
+Options +FollowSymlinks -MultiViews
+RewriteEngine On
+
+# don't rewrite anything that really exists (https://stackoverflow.com/a/1784482/1346098)
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule .* - [L]
+
+RewriteRule ^([^/]+)?/?([^/]+)?/?([^/]+)?(.*)$  index.php?operation=$1&user=$2&hash=$3  [L,QSA]
