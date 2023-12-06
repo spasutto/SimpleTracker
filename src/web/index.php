@@ -327,7 +327,14 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
     plines.forEach(l => map.removeLayer(l));
     plines = [];
     tracks.forEach(t => {
-      if (!ucolors.hasOwnProperty(t.name)) ucolors[t.name] = "#" + ((1 << 24) * Math.random() | 0).toString(16).padStart(6, "0");
+      if (!ucolors.hasOwnProperty(t.name)) {
+        let color = '';
+        do {
+          color = "#" + ((1 << 24) * Math.random() | 0).toString(16).padStart(6, "0");
+        }
+        while (Object.values(ucolors).some(c => c == color));
+        ucolors[t.name] = color;
+      }
       let now = Date.now()/1000;
       if (!cboldtracks.checked) {
         t.pts = t.pts.filter(pt => (now-pt.time)<86400);//86400s==24h
@@ -342,8 +349,25 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
       }
       if (t.pts.length > 0) {
         if (t.pts[0].time > mints) mints = t.pts[0].time;
-        let latlngs = t.pts.map(pt => [pt.lat, pt.lon]);
-        plines.push(L.polyline(latlngs, {color: ucolors[t.name]}).addTo(map));
+        let segm = [t.pts];
+        if (cbholetracks.checked) {
+          segm = [];
+          let lastind=0;
+          let i=1;
+          for (; i<t.pts.length; i++) {
+            if (distance(t.pts[i-1].lat, t.pts[i-1].lon, t.pts[i].lat, t.pts[i].lon) > 1) {
+              if (i-lastind > 1)
+                segm.push(t.pts.slice(lastind, i-1));
+              lastind=i;
+            }
+          }
+          if (i-lastind > 1)
+            segm.push(t.pts.slice(lastind, i-1));
+        }
+        segm.forEach(seg => {
+          let latlngs = seg.map(pt => [pt.lat, pt.lon]);
+          plines.push(L.polyline(latlngs, {color: ucolors[t.name]}).addTo(map));
+        });
         let alt = t.pts[0].alt;
         if (typeof alt !== 'number') alt = '';
         else alt = `<BR>${Math.round(alt*10)/10}m`;
@@ -351,9 +375,9 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
         date = `${date.toLocaleString()} (${Math.round((now-date.getTime()/1000)/60)}min)`;
         let pptext = `<a href="${rootfolder}/filter/${t.name}" title="filtrer pour cet utilisateur">${t.name}</a> @ ${date}${alt} <a href="#" onclick="downloadGPX('${t.name}')">GPX</a>`;
         if (user == t.name) pptext += '<BR><a href="<?php echo $ROOTFOLDER;?>">supprimer le filtre sur cet utilisateur</a>';
-        if (Object.hasOwn(umarkers, t.name)) umarkers[t.name].setLatLng(latlngs[0]).setPopupContent(pptext);
+        if (Object.hasOwn(umarkers, t.name)) umarkers[t.name].setLatLng(segm[0][0]).setPopupContent(pptext);
         else {
-          umarkers[t.name] = L.marker(latlngs[0]).addTo(map).bindPopup(pptext);
+          umarkers[t.name] = L.marker(segm[0][0]).addTo(map).bindPopup(pptext);
           if (cbfollow.checked || cbcadrer.checked) umarkers[t.name].openPopup();
         }
       }
