@@ -233,8 +233,8 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
     <a href="javascript:void(0)" class="closebtn" onclick="closePopup()">&times;</a>
     <div id="popupcont" class="overlay-content"></div>
   </div>
-  <input type="checkbox" name="cboldtracks" id="cboldtracks" onclick="mints=-1;"><label for="cboldtracks">> 24H</label>
-  <input type="checkbox" name="cbholetracks" id="cbholetracks" onclick="mints=-1;"><label for="cbholetracks">> 1km</label>
+  <input type="checkbox" name="cboldtracks" id="cboldtracks" onclick="resetmints();"><label for="cboldtracks" onclick="resetmints();">&gt; 24H</label>
+  <input type="checkbox" name="cbholetracks" id="cbholetracks" onclick="resetmints();"><label for="cbholetracks" onclick="resetmints();">&gt; 1km</label>
   <input type="checkbox" name="cbfollow" id="cbfollow" onclick="if (this.checked) cbcadrer.checked=false; else map.closePopup();" checked><label for="cbfollow">suivre</label>
   <input type="checkbox" name="cbcadrer" id="cbcadrer" onclick="if (this.checked) cbfollow.checked=false;else map.closePopup();"><label for="cbcadrer">cadrer</label>
   <img id="qr" onclick="genQR()" title="Obtenir l'URL du tracker" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAMAAADXqc3KAAADAFBMVEX+/v7d3d1GRkYMDAwKCgoLCwsJCQkxMTFBQUEAAABTU1NVVVVUVFR2dnYICAh+fn4wMDApKSklJSUqKio4ODiwsLAvLy+NjY2QkJCKiooaGhpzc3OLi4usrKxQUFB1dXUCAgJNTU0uLi6IiIimpqbOzs5PT08yMjKJiYnT09MbGxtYWFhaWlpXV1cFBQVycnJ0dHQGBgZeXl5cXFwcHBwzMzOurq5vb29sbGxoaGjMzMzFxcWnp6fExMTW1tbZ2dlqamqPj4+7u7uVlZVlZWWYmJjLy8vGxsbR0dGamprV1dV3d3ddXV3Nzc2enp5RUVFjY2O+vr7AwMDY2NiTk5PBwcGoqKicnJzU1NRWVlZSUlIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAD56wD56wAAAGgAAAD55jD55jAAAFgAAAAAEAAAAAAAAAAAAAAAAAD56JD558AAADQAAAD55mT55mQAACQAAAAAAQAAAAAAAAAAAAAAA0AAABNBfMAAAAAAAAD55pj55pgAAMAAAAAAAAAAAAAAAAAAEAAAAAD57Dj56PgAAJwAAAD55sz55swAAIwAAAAAAAAAAAAAAAAAACAAAAD54qz56jAAAGgAAAD55wD55wAAACQAAAAAAAAAAAAAAIAAAAAAADQAABNBfMAAAAAAAAD55zT55zQAACQAAAAAAAAAAAAAAAAAABAABKwAABNBfMAAAAAAAAD552j552gAACQAAAAAAAAAAAAAAABAAAAABOAAABNBfMAAAAAAAAD555z555wAASgAAAAAAAAAAAAAAAAAAAAAAAD558D558AAAQQAAAD559D559AAACQAAAAABAAAAAAAAAAAAAAAADQAABNBfMBhhVbYAAAAAXRSTlMAQObYZgAAAAlwSFlzAAALEgAACxIB0t1+/AAAAR5JREFUeNqdkelSwlAMhQ9wy+X2tqxlLbJTEFtRcSmoiDuCFnfF938QSytOq6Mzmj85k28mOUmAf0QgGCJECNOFpmGBkFAw4IAIE7nERXmhZUeyiAOi0tceUtRJhCMWTyRTSjqtpJKJeAycuEBERsnm8gVVLeRzWSUD0QUCBy1iBaVyuWSnIgUXHFCpolZvsKamqlqTNeo1VCsOoDJabaxCk2XNTu0WZLq0QTtrurHe3djUt3rbOx5/u3tm3+wO9s2epPcPvoFDDG195N3IbTUasmOcsNPP6sdw8QznF5fjqwmm1GdXvAZumGVXZhXfgvwWd2NrcA8Ygu8kndEDe8STPWNG/Ed8hjUBXl4xJ7+f3fuo6dx4my8f9eNr/xjv4IMgs1Yai0cAAAAASUVORK5CYII=" alt="" />
@@ -256,7 +256,6 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
     ovl.style.width = "100%";
     document.getElementById("map").style.display='none';
   }
-  
   function closePopup() {
     ovl.style.width = "0%";
     document.getElementById("map").style.display='block';
@@ -293,6 +292,11 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
     }
     L.control.layers(baseMaps, null, {position: 'topleft'}).addTo(map);
   }
+  function resetmints() {
+    if (window.controller) controller.abort();
+    launchFetchLoop();
+    mints=-1;
+  }
   function fetchTracks() {
     if (!loadtracksdone) controller.abort();
     controller = new AbortController();
@@ -302,7 +306,8 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
     .then(r=>r.json())
     .then(updateTracks)
     .catch((err) => {
-      console.error(`fetchTracks error: ${err.message}`);
+      if (err?.message != 'The user aborted a request.')
+        console.error(`fetchTracks error: ${err.message}`);
     });
   }
   function updateTracks(data) {
@@ -328,12 +333,8 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
     plines = [];
     tracks.forEach(t => {
       if (!ucolors.hasOwnProperty(t.name)) {
-        let color = '';
-        do {
-          color = "#" + ((1 << 24) * Math.random() | 0).toString(16).padStart(6, "0");
-        }
-        while (Object.values(ucolors).some(c => c == color));
-        ucolors[t.name] = color;
+        ucolors[t.name] = selectColor(window.index??0);
+        window.index = (window.index??0)+5;
       }
       let now = Date.now()/1000;
       if (!cboldtracks.checked) {
@@ -347,7 +348,12 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
         let i = t.pts.findIndex((pt, i) => i>0 && distance(t.pts[i-1].lat, t.pts[i-1].lon, t.pts[i].lat, t.pts[i].lon) > 1);
         if (i>=0) t.pts.length = i;
       }
-      if (t.pts.length > 0) {
+      if (t.pts.length <= 0) {
+        if (Object.hasOwn(umarkers, t.name)) {
+          map.removeLayer(umarkers[t.name]);
+          delete umarkers[t.name];
+        }
+      } else {
         if (t.pts[0].time > mints) mints = t.pts[0].time;
         let segm = [t.pts];
         if (cbholetracks.checked) {
@@ -386,6 +392,7 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
     Object.keys(umarkers).filter(kt => !tracks.some(t => t.name == kt)).forEach(kt => {
       map.removeLayer(umarkers[kt]);
       delete umarkers[kt];
+      delete ucolors[kt];
     });
     if (Array.isArray(plines) && plines.length) {
       if (cbfollow.checked) {
@@ -400,6 +407,10 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
         map.fitBounds(new L.featureGroup(plines).getBounds());
       }
     }
+  }
+  function selectColor(colorNum = 0){
+    colors = 25;
+    return "hsl(" + (colorNum * (360 / colors) % 360) + ",100%,50%)";
   }
   function distance(lat1,lon1,lat2,lon2) {
     var R = 6371; // Radius of the earth in km
@@ -465,13 +476,16 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
       });
     }
   }
+  function launchFetchLoop() {
+    if (window.fetchtimer) window.clearTimeout(fetchtimer);
+    if (window.controller) controller.abort();
+    fetchTracks();
+    window.fetchtimer = window.setInterval(fetchTracks, 2000);
+  }
 
   //console.log(distance(44.79271 , 5.612266, 44.800738 , 5.580474));//2.66km
   loadMap();
-  fetchTracks();
-  
-  window.setInterval(fetchTracks, 2000);
-  //window.setTimeout(openPopup, 500);
+  launchFetchLoop();
   </script>
 </body>
 </html>
