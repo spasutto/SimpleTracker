@@ -38,7 +38,7 @@ function get_users($u, $mints=-1, $users=null) {
   $jsonpath = joinPaths(array(TRACKFOLDER, $u.".json"));
   $tracks = array();
   $files = glob($jsonpath);
-  if (count($files) <= 0) {
+  if ($u != '*' && count($files) <= 0) {
     http_response_code(404);
     echo "Not found ";
     die();
