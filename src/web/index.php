@@ -206,8 +206,7 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
   transition: 0.3s;
 }
 .overlay img {
-    position: absolute;
-    left: 39%;
+  display: initial !important;
 }
 .overlay a:hover, .overlay a:focus {
   color: #f1f1f1;
@@ -231,13 +230,23 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
 <body>
   <div id="ovl" class="overlay">
     <a href="javascript:void(0)" class="closebtn" onclick="closePopup()">&times;</a>
-    <div id="popupcont" class="overlay-content"></div>
+    <div id="popupcont" class="overlay-content">
+      <form id="formqr" onsubmit="return false;">
+        <input type="text" id="qruser" onfocus="this.select();" onmouseup="return false;" value="username" style="width:330px;"><BR>
+        <input type="password" id="qrpwd" onfocus="this.select();" onmouseup="return false;" value="password" style="width:330px;"><BR>
+        <input type="submit" onclick="genQR(qruser.value, qrpwd.value);return false;" value="submit" style="width:330px;">
+      </form>
+      <div id="qrres" style="display:none;">
+        <input type="text" id="qrtext" onfocus="this.select();" onmouseup="return false;" style="width:330px;"><BR>
+        <div id="qrcode"></div>
+      </div>
+    </div>
   </div>
   <input type="checkbox" name="cboldtracks" id="cboldtracks" onclick="resetmints();"><label for="cboldtracks" onclick="resetmints();">&gt; 24H</label>
   <input type="checkbox" name="cbholetracks" id="cbholetracks" onclick="resetmints();"><label for="cbholetracks" onclick="resetmints();">&gt; 1km</label>
   <input type="checkbox" name="cbfollow" id="cbfollow" onclick="if (this.checked) cbcadrer.checked=false; else map.closePopup();" checked><label for="cbfollow">suivre</label>
   <input type="checkbox" name="cbcadrer" id="cbcadrer" onclick="if (this.checked) cbfollow.checked=false;else map.closePopup();"><label for="cbcadrer">cadrer</label>
-  <img id="qr" onclick="genQR()" title="Obtenir l'URL du tracker" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAMAAADXqc3KAAADAFBMVEX+/v7d3d1GRkYMDAwKCgoLCwsJCQkxMTFBQUEAAABTU1NVVVVUVFR2dnYICAh+fn4wMDApKSklJSUqKio4ODiwsLAvLy+NjY2QkJCKiooaGhpzc3OLi4usrKxQUFB1dXUCAgJNTU0uLi6IiIimpqbOzs5PT08yMjKJiYnT09MbGxtYWFhaWlpXV1cFBQVycnJ0dHQGBgZeXl5cXFwcHBwzMzOurq5vb29sbGxoaGjMzMzFxcWnp6fExMTW1tbZ2dlqamqPj4+7u7uVlZVlZWWYmJjLy8vGxsbR0dGamprV1dV3d3ddXV3Nzc2enp5RUVFjY2O+vr7AwMDY2NiTk5PBwcGoqKicnJzU1NRWVlZSUlIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAD56wD56wAAAGgAAAD55jD55jAAAFgAAAAAEAAAAAAAAAAAAAAAAAD56JD558AAADQAAAD55mT55mQAACQAAAAAAQAAAAAAAAAAAAAAA0AAABNBfMAAAAAAAAD55pj55pgAAMAAAAAAAAAAAAAAAAAAEAAAAAD57Dj56PgAAJwAAAD55sz55swAAIwAAAAAAAAAAAAAAAAAACAAAAD54qz56jAAAGgAAAD55wD55wAAACQAAAAAAAAAAAAAAIAAAAAAADQAABNBfMAAAAAAAAD55zT55zQAACQAAAAAAAAAAAAAAAAAABAABKwAABNBfMAAAAAAAAD552j552gAACQAAAAAAAAAAAAAAABAAAAABOAAABNBfMAAAAAAAAD555z555wAASgAAAAAAAAAAAAAAAAAAAAAAAD558D558AAAQQAAAD559D559AAACQAAAAABAAAAAAAAAAAAAAAADQAABNBfMBhhVbYAAAAAXRSTlMAQObYZgAAAAlwSFlzAAALEgAACxIB0t1+/AAAAR5JREFUeNqdkelSwlAMhQ9wy+X2tqxlLbJTEFtRcSmoiDuCFnfF938QSytOq6Mzmj85k28mOUmAf0QgGCJECNOFpmGBkFAw4IAIE7nERXmhZUeyiAOi0tceUtRJhCMWTyRTSjqtpJKJeAycuEBERsnm8gVVLeRzWSUD0QUCBy1iBaVyuWSnIgUXHFCpolZvsKamqlqTNeo1VCsOoDJabaxCk2XNTu0WZLq0QTtrurHe3djUt3rbOx5/u3tm3+wO9s2epPcPvoFDDG195N3IbTUasmOcsNPP6sdw8QznF5fjqwmm1GdXvAZumGVXZhXfgvwWd2NrcA8Ygu8kndEDe8STPWNG/Ed8hjUBXl4xJ7+f3fuo6dx4my8f9eNr/xjv4IMgs1Yai0cAAAAASUVORK5CYII=" alt="" />
+  <img id="qr" onclick="openQR()" title="Obtenir l'URL du tracker" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAMAAADXqc3KAAADAFBMVEX+/v7d3d1GRkYMDAwKCgoLCwsJCQkxMTFBQUEAAABTU1NVVVVUVFR2dnYICAh+fn4wMDApKSklJSUqKio4ODiwsLAvLy+NjY2QkJCKiooaGhpzc3OLi4usrKxQUFB1dXUCAgJNTU0uLi6IiIimpqbOzs5PT08yMjKJiYnT09MbGxtYWFhaWlpXV1cFBQVycnJ0dHQGBgZeXl5cXFwcHBwzMzOurq5vb29sbGxoaGjMzMzFxcWnp6fExMTW1tbZ2dlqamqPj4+7u7uVlZVlZWWYmJjLy8vGxsbR0dGamprV1dV3d3ddXV3Nzc2enp5RUVFjY2O+vr7AwMDY2NiTk5PBwcGoqKicnJzU1NRWVlZSUlIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAD56wD56wAAAGgAAAD55jD55jAAAFgAAAAAEAAAAAAAAAAAAAAAAAD56JD558AAADQAAAD55mT55mQAACQAAAAAAQAAAAAAAAAAAAAAA0AAABNBfMAAAAAAAAD55pj55pgAAMAAAAAAAAAAAAAAAAAAEAAAAAD57Dj56PgAAJwAAAD55sz55swAAIwAAAAAAAAAAAAAAAAAACAAAAD54qz56jAAAGgAAAD55wD55wAAACQAAAAAAAAAAAAAAIAAAAAAADQAABNBfMAAAAAAAAD55zT55zQAACQAAAAAAAAAAAAAAAAAABAABKwAABNBfMAAAAAAAAD552j552gAACQAAAAAAAAAAAAAAABAAAAABOAAABNBfMAAAAAAAAD555z555wAASgAAAAAAAAAAAAAAAAAAAAAAAD558D558AAAQQAAAD559D559AAACQAAAAABAAAAAAAAAAAAAAAADQAABNBfMBhhVbYAAAAAXRSTlMAQObYZgAAAAlwSFlzAAALEgAACxIB0t1+/AAAAR5JREFUeNqdkelSwlAMhQ9wy+X2tqxlLbJTEFtRcSmoiDuCFnfF938QSytOq6Mzmj85k28mOUmAf0QgGCJECNOFpmGBkFAw4IAIE7nERXmhZUeyiAOi0tceUtRJhCMWTyRTSjqtpJKJeAycuEBERsnm8gVVLeRzWSUD0QUCBy1iBaVyuWSnIgUXHFCpolZvsKamqlqTNeo1VCsOoDJabaxCk2XNTu0WZLq0QTtrurHe3djUt3rbOx5/u3tm3+wO9s2epPcPvoFDDG195N3IbTUasmOcsNPP6sdw8QznF5fjqwmm1GdXvAZumGVXZhXfgvwWd2NrcA8Ygu8kndEDe8STPWNG/Ed8hjUBXl4xJ7+f3fuo6dx4my8f9eNr/xjv4IMgs1Yai0cAAAAASUVORK5CYII=" alt="" />
   <BR>
   <div id="map"></div>
   <script>
@@ -252,6 +261,7 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
   var zoomed = false;
   var mints = -1
   var tracks = [];
+  var QRCode = new QRCode("qrcode");
   function openPopup() {
     ovl.style.width = "100%";
     document.getElementById("map").style.display='none';
@@ -450,9 +460,13 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
     let data = prefix+pts.map(pt => `<trkpt lat="${pt.lat}" lon="${pt.lon}"><time>${timestampToDate(pt.time)}</time><ele>${pt.alt}</ele></trkpt>`)+suffix;
     downloadFile(user+'.gpx', data, 'application/gpx+xml');
   }
-  function genQR() {
-    let user, pwd;
-    if ((user = prompt('entrez le nom d\'utilisateur')) && (pwd = prompt('entrez le mot de passe'))) {
+  function openQR() {
+    qrres.style.display = 'none';
+    formqr.style.display = 'initial';
+    openPopup();
+  }
+  function genQR(user = null, pwd = null) {
+    if ((user = user ?? prompt('entrez le nom d\'utilisateur')) && (pwd = pwd ?? prompt('entrez le mot de passe'))) {
       const headers = new Headers({
         "Content-Type": "application/x-www-form-urlencoded"
       });
@@ -465,9 +479,12 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
       })
       .then(data => {
         if (data.startsWith('http')) {
-          popupcont.innerHTML = `<input type="text" value="${data}" onfocus="this.select();" onmouseup="return false;" style="width:330px;"><BR><div id="qrcode"></div>`;
-          new QRCode("qrcode").makeCode(data);3
-          openPopup();
+          qruser.value = 'username';
+          qrpwd.value = 'password';
+          qrtext.value = data;
+          QRCode.makeCode(data);
+          formqr.style.display = 'none';
+          qrres.style.display = 'initial';
         }
         else alert(data);
       })
