@@ -120,6 +120,37 @@ function update_user($user, $hash, $points) {
   file_put_contents($jsonpath, json_encode(array_values($pts)));
   echo "OK";
 }
+function clear_user($user, $hash, $time = 0) {
+  if (!checkPwd($user, $hash)) {
+    http_response_code(403);
+    echo "No access";
+    die();
+  }
+  $jsonpath = joinPaths(array(TRACKFOLDER, $user.".json"));
+  $pts = null;
+  if (file_exists($jsonpath)) {
+    $pts = json_decode(file_get_contents($jsonpath));
+  }
+  if (!is_array($pts) || $time == 0) $pts=array();
+  else if ($time > 0) {
+    $pts = array_filter($pts, function($pt) use($time) {
+      return $pt->time < $time;
+    });
+  } else { // time < 0 ==> delta du point le plus récent
+    // tri par temps
+    function cmp($a, $b) {
+      return $b->time-$a->time;
+    }
+    usort($pts, "cmp");
+    $time *= 60;//le detlta est en minutes
+    $time += $pts[0]->time;
+    $pts = array_filter($pts, function($pt) use($time) {
+      return $pt->time < $time;
+    });
+  }
+  file_put_contents($jsonpath, json_encode(array_values($pts)));
+  echo "OK";
+}
 
 function geturl($user, $pwd) {
   $hash = md5($pwd);
@@ -145,6 +176,14 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
       if (isset($_REQUEST['lat']) && isset($_REQUEST['lon']) && isset($_REQUEST['time']))
         $points = $_REQUEST['lat']." ".$_REQUEST['lon']." ".$_REQUEST['alt']." ".$_REQUEST['time'];//44.75884895771742 5.675952415913343 813.4426 1701452873
       update_user(trim($_REQUEST['user']), trim($_REQUEST['hash']), $points);
+      //sleep(rand(0, 5));
+      exit(0);
+    case 'clear':
+      $time = 0;
+      if (isset($_REQUEST['time']) && preg_match("/^-?\d+$/", $_REQUEST['time'])) {
+        $time = @intval($_REQUEST['time']);
+      }
+      clear_user(trim($_REQUEST['user']), trim($_REQUEST['hash']), $time);
       //sleep(rand(0, 5));
       exit(0);
     case 'geturl':
@@ -272,6 +311,15 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
   }
   function loadMap() {
     window.map = L.map('map').setView([45.1696, 5.724637], 12);
+    map.on('mousemove', function(e) {
+      setCursorFromMap(e.latlng);
+    });
+    map.on('zoomend', function() {
+      if (window.nearcircle) {
+        const radius = getNearCircleRadius(nearcircle.getLatLng().lat);
+        nearcircle.setRadius(radius)
+      }
+    });
     let osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     });
@@ -301,11 +349,6 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
       baseMaps[basemap].addTo(map);
     }
     L.control.layers(baseMaps, null, {position: 'topleft'}).addTo(map);
-  }
-  function resetmints() {
-    if (window.controller) controller.abort();
-    launchFetchLoop();
-    mints=-1;
   }
   function fetchTracks() {
     if (!loadtracksdone) controller.abort();
@@ -362,6 +405,7 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
         if (Object.hasOwn(umarkers, t.name)) {
           map.removeLayer(umarkers[t.name]);
           delete umarkers[t.name];
+          removeNearCircle(t.name);
         }
       } else {
         if (t.pts[0].time > mints) mints = t.pts[0].time;
@@ -403,6 +447,7 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
       map.removeLayer(umarkers[kt]);
       delete umarkers[kt];
       delete ucolors[kt];
+      removeNearCircle(kt);
     });
     if (Array.isArray(plines) && plines.length) {
       if (cbfollow.checked) {
@@ -433,6 +478,9 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
     var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
     var d = R * c; // Distance in km
     return d;
+    let c1 = L.latLng(lat1, lon1);
+    let c2 = L.latLng(lat2, lon2);
+    return c1.distanceTo(c2)/1000;
   }
   function deg2rad(deg) {
     return deg * (Math.PI/180)
@@ -493,11 +541,70 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
       });
     }
   }
+  function removeNearCircle(name) {
+    if (window.nearest && nearest.name == name && window.nearcircle) {
+      map.removeLayer(nearcircle);
+      nearcircle = nearest = null;
+    }
+  }
+  function getNearCircleRadius(lat) {
+    const zoom = map.getZoom();
+    const metersPerPixel = 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, zoom)
+    // Multiply that by a factor based on how large the circle should appear on the screen
+    return metersPerPixel * 5;
+  }
+  function setCursorFromMap(latlng) {
+    if (typeof window.tracks === 'undefined' || !Array.isArray(window.tracks)) return;
+    let nearest = tracks.filter(t => t.pts.length).map(t => {return {'name': t.name, 'nearpt': t.pts.reduce(function(a, b) {
+      return !!a.lat && distance(latlng.lat, latlng.lng, a.lat , a.lon) < distance(latlng.lat, latlng.lng, b.lat, b.lon) ? a : b;
+    }, [])};}).map(pt => {pt.distance=distance(latlng.lat, latlng.lng, pt.nearpt.lat , pt.nearpt.lon);return pt;}).reduce(function(a, b) {
+      return a.distance < b.distance ? a : b;
+    }, []);
+    /*let nearest = tracks.filter(t => t.pts.length).map(t => {return {'name': t.name, 'nearpt': t.pts.slice().reduce(function(a, b) {
+      if (typeof a?.lat === 'number') a.distance = distance(latlng.lat, latlng.lng, a.lat , a.lon);
+      b.distance = distance(latlng.lat, latlng.lng, b.lat , b.lon);
+      return !!a?.lat && a.distance < b.distance ? a : b;
+    }, null)};}).reduce(function(a, b) {
+      return (typeof a?.nearpt?.distance === 'number') && a.nearpt.distance < b.nearpt.distance ? a : b;
+    }, null);*/
+    if (typeof nearest?.distance !== 'number') return;
+    window.nearest = nearest;
+    let c1 = map.latLngToLayerPoint(latlng);
+    let c2 = map.latLngToLayerPoint(L.latLng(nearest.nearpt.lat, nearest.nearpt.lon));
+    let dist = Math.sqrt(Math.pow(c2.x-c1.x, 2) + Math.pow(c2.y-c1.y, 2));
+    if (dist>100) {
+      removeNearCircle(nearest.name);
+      return;
+    }
+    //if (L.latLng(nearest.lat, nearest.lon).distanceTo(latlng)>5000) return;
+    let ptdate = new Date(nearest.nearpt.time*1000).toLocaleString('fr-FR', { /*timeZone: 'UTC'*/ })/*.substr(-8, 8)*/;
+    let mktxt = `${nearest.name}@${ptdate}`;
+    //mktxt+='&nbsp;:&nbsp;'+nearest.alt+'m';
+    //mktxt+='<BR>' + nearest.vz+'m/s&nbsp;&nbsp;&nbsp;'+nearest.vx+'km/h';
+    //marker.bindPopup(mktxt).setLatLng([nearest.lat, nearest.lon]).update();
+    //graph.setPos(nearest);
+    //updateIcon(nearest);
+    const radius = getNearCircleRadius(nearest.nearpt.lat);
+    if (!window.nearcircle) {
+      window.nearcircle = L.circle([nearest.nearpt.lat,nearest.nearpt.lon], {radius: radius})
+      .bindTooltip(mktxt, {permanent: true, className: "my-label", offset: [0, 0] })
+      .addTo(map);
+    } else {
+      nearcircle.setLatLng([nearest.nearpt.lat,nearest.nearpt.lon]);
+      nearcircle.setRadius(radius);
+      nearcircle.setTooltipContent(mktxt);
+    }
+  }
+  function resetmints() {
+    if (window.controller) controller.abort();
+    launchFetchLoop();
+    mints=-1;
+  }
   function launchFetchLoop() {
     if (window.fetchtimer) window.clearTimeout(fetchtimer);
     if (window.controller) controller.abort();
     fetchTracks();
-    window.fetchtimer = window.setInterval(fetchTracks, 2000);
+    window.fetchtimer = window.setInterval(fetchTracks, 5000);
   }
 
   //console.log(distance(44.79271 , 5.612266, 44.800738 , 5.580474));//2.66km
