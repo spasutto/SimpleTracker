@@ -432,18 +432,19 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
     }
     L.control.layers(baseMaps, null, {position: 'topleft'}).addTo(map);
   }
-  function fetchTracks() {
+  async function fetchTracks() {
     if (!loadtracksdone) controller.abort();
-    controller = new AbortController();
+    window.controller = new AbortController();
     signal = controller.signal;
     loadtracksdone = false;
-    fetch(rootfolder+"/fetch/"+user+"?ts="+mints+"&users="+encodeURIComponent(tracks.map(t => t.name).join(',')), { signal })
+    await fetch(rootfolder+"/fetch/"+user+"?ts="+mints+"&users="+encodeURIComponent(tracks.map(t => t.name).join(',')), { signal })
     .then(r=>r.json())
     .then(updateTracks)
     .catch((err) => {
       if (err?.message != 'The user aborted a request.')
         console.error(`fetchTracks error: ${err.message}`);
     });
+    window.setTimeout(fetchTracks, 5000);
   }
   function updateTracks(data) {
     loadtracksdone = true;
@@ -713,20 +714,13 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
     }
   }
   function resetmints() {
-    if (window.controller) controller.abort();
-    launchFetchLoop();
-    mints=<?php echo $gmints;?>;
-  }
-  function launchFetchLoop() {
-    if (window.fetchtimer) window.clearTimeout(fetchtimer);
-    if (window.controller) controller.abort();
     fetchTracks();
-    window.fetchtimer = window.setInterval(fetchTracks, 5000);
+    mints=<?php echo $gmints;?>;
   }
 
   //console.log(distance(44.79271 , 5.612266, 44.800738 , 5.580474));//2.66km
   loadMap();
-  launchFetchLoop();
+  fetchTracks();
   </script>
 </body>
 </html>
