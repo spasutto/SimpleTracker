@@ -148,7 +148,7 @@ function update_user($user, $hash, $points) {
     mkdir(TRACKFOLDER, 0777, true);
   }
   // >10Mo ==> on archive
-  if (file_exists($userfilepath) && filesize($userfilepath) > 10000000) {
+  if (file_exists($userfilepath) && filesize($userfilepath) > 5000000) {
     rename($userfilepath, $userfilepath.time());
   }
   file_put_contents($userfilepath, $pts , FILE_APPEND | LOCK_EX);
