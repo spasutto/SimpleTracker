@@ -1,6 +1,7 @@
 <?php
 //var_dump($_REQUEST);exit(0);
 const TRACKFOLDER = './tracks/';
+$gmints = time() - 14*24*3600;
 $ROOTFOLDER = dirname($_SERVER['PHP_SELF']);
 function joinPaths() {
   $args = func_get_args();
@@ -13,18 +14,43 @@ function joinPaths() {
   $paths = array_filter($paths);
   return join('/', $paths);
 }
-
-function checkPwd($username, $hash) {
+function getExclusions($userinfos) {
+  $exclusions = array();
+  if (count($userinfos)<2) return $exclusions;
+  $userinfos = explode('|', $userinfos[1]);
+  foreach($userinfos as $userexclusion) {
+    $userexclusion = explode(',', $userexclusion);
+    if (count($userexclusion)<3) continue;
+    $exclusions[] = array(floatval($userexclusion[0]), floatval($userexclusion[1]), floatval($userexclusion[2]));
+  }
+  return $exclusions;
+}
+function getUserInfos($username = null) {
+  // user:pwdhash:latexcl1,lonexcl1,distexcl1|latexcl2,lonexcl2,distexcl2|...
+  $allusers = $username==null || strlen(trim($username))==0;
+  $retu = new stdClass;
   $users = preg_split("/\r\n|\n|\r/", @file_get_contents('users.txt'));
   $username = strtolower($username);
-  $hash = strtolower($hash);//hash('sha256', $pwd));
   foreach($users as $user) {
     $user = explode(':', $user);
     if (count($user)<2) continue;
-    if (strtolower($user[0]) == $username) {
-      return strtolower($user[1]) == $hash;
+    if ($allusers) {
+      $username = $user[0];
+      array_shift($user);
+      $retu->{$username} = $user;
+    }
+    else if (strtolower($user[0]) == $username) {
+      array_shift($user);
+      return $user;
     }
   }
+  return (array) $retu;
+}
+
+function checkPwd($username, $hash) {
+  $hash = strtolower($hash);//hash('sha256', $pwd));
+  $uinfos = getUserInfos($username);
+  return !!$uinfos && strtolower($uinfos[0]) == $hash;
 }
 function get_users($u, $mints=-1, $users=null) {
   if (!is_dir(TRACKFOLDER)) {
@@ -32,33 +58,49 @@ function get_users($u, $mints=-1, $users=null) {
     echo "Not found ";
     die();
   }
-  $u = trim($u);
+  $u = strtolower(trim($u));
   if (strlen($u)<=0) $u = '*';
   if (!is_array($users)) $users = array();
-  $jsonpath = joinPaths(array(TRACKFOLDER, $u.".json"));
+  $userfilepath = joinPaths(array(TRACKFOLDER, $u.".txt"));
   $tracks = array();
-  $files = glob($jsonpath);
+  $files = glob($userfilepath);
   if ($u != '*' && count($files) <= 0) {
     http_response_code(404);
     echo "Not found ";
     die();
   }
+  $usersinfos = getUserInfos();
   foreach($files as $file){
     if (!is_file($file)) continue;
-    $pts = null;
+    $pts = array();
     $uname = strtolower(pathinfo($file, PATHINFO_FILENAME));
+    if ($u != '*' && $u != $uname) continue;
+    $exclusions = getExclusions($usersinfos[$uname]);
+    $isexclusions = count($exclusions)>0;
     try
     {
-      $pts = json_decode(file_get_contents($file));
-      if ($mints>0 && in_array($uname, $users)) {
-        $pts = array_filter($pts, function($pt){
-          global $mints;
-          return $pt->time > $mints;
-        });
+      if ($file = fopen($file, "r")) {
+        while(!feof($file)) {
+          $line = fgets($file);
+          $pt = explode(',', $line);
+          if (count($pt) != 4) continue;
+          $pt = (object) [
+            'time' => intval($pt[0]),
+            'lat' => floatval($pt[1]),
+            'lon' => floatval($pt[2]),
+            'alt' => floatval($pt[3])
+          ];
+          if (($mints>0 && in_array($uname, $users)) || $isexclusions) {
+            if (($pt->time <= $mints) || ($isexclusions && isExcluded($pt, $exclusions))) continue;
+          }
+          /*if ($pt->time <= time() - 14*24*3600) {
+            continue;
+          }*/
+          $pts[] = $pt;
+        }
+        fclose($file);
       }
-    } catch(Exception $err) {
-      continue;
-    }
+    } catch(Exception $err) {}
     array_push($tracks, (object)['name'=>$uname, 'pts'=>$pts]);
   }
   return $tracks;
@@ -78,47 +120,36 @@ function update_user($user, $hash, $points) {
     http_response_code(204);
     die();
   }
-  $jsonpath = joinPaths(array(TRACKFOLDER, $user.".json"));
-  $pts = null;
-  if (file_exists($jsonpath)) {
-    $pts = json_decode(file_get_contents($jsonpath));
+  // réponse avant la fin du traitement
+  header("Content-type: text/xml");
+  //ignore_user_abort(true);//not required
+  set_time_limit(0);
+  ob_start();
+  echo "<"."?xml version=\"1.0\" encoding=\"UTF-8\"?><message><type>activity_updated</type></message>";
+  header('Connection: close');
+  header('Content-Length: '.ob_get_length());
+  ob_end_flush();
+  @ob_flush();
+  flush();
+  //fastcgi_finish_request();//required for PHP-FPM (PHP > 5.3.3)
+  // fin réponse avant la fin du traitement
+
+  $userfilepath = joinPaths(array(TRACKFOLDER, $user.".txt"));
+  $pts="";
+  for ($i=0; $i<count($points); $i++) {
+    if (substr_count($points[$i], ',') > 1 || (substr_count($points[$i], ',') > 0 && substr_count($points[$i], '.') > 0)) str_replace(',', '', $points[$i]);
+    else str_replace(',', '.', $points[$i]);
+    preg_replace('/[^\d.]/g', '', $points[$i]);
   }
-  if (!is_array($pts)) $pts=array(); 
   for ($i=0; $i<count($points); $i+=4) {
-    $lat=@floatval($points[$i]);
-    $lon=@floatval($points[$i+1]);
-    $alt=@floatval($points[$i+2]);
-    $time=@intval($points[$i+3]);
-    array_unshift($pts, (object) ['time'=>$time, 'lat'=>$lat, 'lon'=>$lon, 'alt'=>$alt]);
-  }
-  // tri par temps
-  function cmp($a, $b) {
-    return $b->time-$a->time;
-  }
-  usort($pts, "cmp");
-  // suppression des vieilles entrées
-  $sliceind = -1;
-  $curtime=time();
-  for ($i=0; $i<count($pts); $i++) {
-    if ($curtime-$pts[$i]->time > 31536000) { // 1 an
-      $sliceind = $i;
-      break;
-    }
-  }
-  if ($sliceind>-1) {
-    $pts = array_slice($pts, 0, $sliceind);
-  }
-  // suppression des doublons
-  for ($i=count($pts)-1; $i>0; $i--) {
-    if ($pts[$i]->time==$pts[$i-1]->time && $pts[$i]->lat==$pts[$i-1]->lat && $pts[$i]->lon==$pts[$i-1]->lon) {
-      unset($pts[$i]);
-    }
+    $pts .= $points[$i+3].",".$points[$i].",".$points[$i+1].",".$points[$i+2].PHP_EOL;
   }
   if (!file_exists(TRACKFOLDER)) {
     mkdir(TRACKFOLDER, 0777, true);
   }
-  file_put_contents($jsonpath, json_encode(array_values($pts)));
+  file_put_contents($userfilepath, $pts , FILE_APPEND | LOCK_EX);
   echo "OK";
+  die();
 }
 function clear_user($user, $hash, $time = 0) {
   if (!checkPwd($user, $hash)) {
@@ -126,17 +157,31 @@ function clear_user($user, $hash, $time = 0) {
     echo "No access";
     die();
   }
-  $jsonpath = joinPaths(array(TRACKFOLDER, $user.".json"));
-  $pts = null;
-  if (file_exists($jsonpath)) {
-    $pts = json_decode(file_get_contents($jsonpath));
+  if ($time == 0) {
+    echo "OK";
+    return;
   }
-  if (!is_array($pts) || $time == 0) $pts=array();
-  else if ($time > 0) {
-    $pts = array_filter($pts, function($pt) use($time) {
-      return $pt->time < $time;
-    });
-  } else { // time < 0 ==> delta du point le plus récent
+  $userfilepath = joinPaths(array(TRACKFOLDER, $user.".txt"));
+  $pts = array();
+  if (file_exists($userfilepath)) {
+    if ($file = fopen($file, "r")) {
+      while(!feof($file)) {
+        $line = fgets($file);
+        $pt = explode(',', $line);
+        $pt = (object) [
+          'time' => intval($pt[0]),
+          'lat' => floatval($pt[1]),
+          'lon' => floatval($pt[2]),
+          'alt' => floatval($pt[3])
+        ];
+        if ($time > 0 && $pt->time >= $time) 
+          continue;
+        $pts[] = $pt;
+      }
+      fclose($file);
+    }
+  }
+  if (time < 0) { // time < 0 ==> delta du point le plus récent
     // tri par temps
     function cmp($a, $b) {
       return $b->time-$a->time;
@@ -148,7 +193,11 @@ function clear_user($user, $hash, $time = 0) {
       return $pt->time < $time;
     });
   }
-  file_put_contents($jsonpath, json_encode(array_values($pts)));
+  $file = fopen($userfilepath,"w");
+  foreach ($pts as $pt) {
+    fwrite($file,$pt->time.",".$pt->lat.",".$pt->lon.",".$pt->alt.PHP_EOL);
+  }
+  fclose($file);
   echo "OK";
 }
 
@@ -161,12 +210,40 @@ function geturl($user, $pwd) {
   }
   echo (empty($_SERVER['HTTPS']) ? 'http' : 'https')."://$_SERVER[HTTP_HOST]".dirname($_SERVER['PHP_SELF'])."/update/".$user."/".$hash;
 }
+function isExcluded($pt, $exclusions) {
+  $nbrexclusions = count($exclusions);
+  for ($i=0; $i<$nbrexclusions; $i+=3) {
+    if (distance($pt->lat, $pt->lon, $exclusions[$i][0], $exclusions[$i][1]) < $exclusions[$i][2]) {
+      //echo distance($pt->lat, $pt->lon, $exclusions[$i][0], $exclusions[$i][1]);
+      //var_dump($exclusions);
+      //var_dump($pt);
+      return true;
+    }
+  }
+  return false;
+}
+function distance($lat1, $lon1, $lat2, $lon2) 
+{
+  if (($lat1 == $lat2) && ($lon1 == $lon2)) {
+    return 0;
+  }
+  else {
+    $theta = $lon1 - $lon2;
+    $dist = sin(deg2rad($lat1)) * sin(deg2rad($lat2)) +  cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * cos(deg2rad($theta));
+    $dist = acos($dist);
+    $dist = rad2deg($dist);
+    $miles = $dist * 60 * 1.1515;
+    
+    //echo round($miles * 1609.344)."\n";
 
+    return ($miles * 1609.344);
+  }
+}
 if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>0) {
   switch ($op) {
     case 'fetch':
       header('content-type:application/json');
-      $mints = isset($_REQUEST['ts']) && filter_var($_REQUEST['ts'], FILTER_VALIDATE_INT) ? intval($_REQUEST['ts']) : -1;
+      $mints = isset($_REQUEST['ts']) && filter_var($_REQUEST['ts'], FILTER_VALIDATE_INT) ? intval($_REQUEST['ts']) : $gmints;
       echo json_encode(get_users(trim($_REQUEST['user']), $mints, explode(',',$_REQUEST['users'])));
       //sleep(rand(0, 5));
       exit(0);
@@ -192,6 +269,7 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
   }
 }
 ?>
+<!DOCTYPE html>
 <html>
 <head>
  <meta charset="utf-8">
@@ -270,7 +348,7 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
   <div id="ovl" class="overlay">
     <a href="javascript:void(0)" class="closebtn" onclick="closePopup()">&times;</a>
     <div id="popupcont" class="overlay-content">
-      <form id="formqr" onsubmit="return false;">
+      <form id="formqr" onsubmit="return false;" style="display:none;">
         <input type="text" id="qruser" onfocus="this.select();" onmouseup="return false;" value="username" style="width:330px;"><BR>
         <input type="password" id="qrpwd" onfocus="this.select();" onmouseup="return false;" value="password" style="width:330px;"><BR>
         <input type="submit" onclick="genQR(qruser.value, qrpwd.value);return false;" value="submit" style="width:330px;">
@@ -281,8 +359,8 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
       </div>
     </div>
   </div>
-  <input type="checkbox" name="cboldtracks" id="cboldtracks" onclick="resetmints();"><label for="cboldtracks" onclick="resetmints();">&gt; 24H</label>
-  <input type="checkbox" name="cbholetracks" id="cbholetracks" onclick="resetmints();"><label for="cbholetracks" onclick="resetmints();">&gt; 1km</label>
+  <input type="checkbox" name="cboldtracks" id="cboldtracks" onclick="resetmints();"><label for="cboldtracks" onclick="resetmints();" title="afficher les traces anciennes">&gt; 24H</label>
+  <input type="checkbox" name="cbholetracks" id="cbholetracks" onclick="resetmints();"><label for="cbholetracks" onclick="resetmints();" title="afficher les trous dans la trace">&gt; 1km</label>
   <input type="checkbox" name="cbfollow" id="cbfollow" onclick="if (this.checked) cbcadrer.checked=false; else map.closePopup();" checked><label for="cbfollow">suivre</label>
   <input type="checkbox" name="cbcadrer" id="cbcadrer" onclick="if (this.checked) cbfollow.checked=false;else map.closePopup();"><label for="cbcadrer">cadrer</label>
   <img id="qr" onclick="openQR()" title="Obtenir l'URL du tracker" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAMAAADXqc3KAAADAFBMVEX+/v7d3d1GRkYMDAwKCgoLCwsJCQkxMTFBQUEAAABTU1NVVVVUVFR2dnYICAh+fn4wMDApKSklJSUqKio4ODiwsLAvLy+NjY2QkJCKiooaGhpzc3OLi4usrKxQUFB1dXUCAgJNTU0uLi6IiIimpqbOzs5PT08yMjKJiYnT09MbGxtYWFhaWlpXV1cFBQVycnJ0dHQGBgZeXl5cXFwcHBwzMzOurq5vb29sbGxoaGjMzMzFxcWnp6fExMTW1tbZ2dlqamqPj4+7u7uVlZVlZWWYmJjLy8vGxsbR0dGamprV1dV3d3ddXV3Nzc2enp5RUVFjY2O+vr7AwMDY2NiTk5PBwcGoqKicnJzU1NRWVlZSUlIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAD56wD56wAAAGgAAAD55jD55jAAAFgAAAAAEAAAAAAAAAAAAAAAAAD56JD558AAADQAAAD55mT55mQAACQAAAAAAQAAAAAAAAAAAAAAA0AAABNBfMAAAAAAAAD55pj55pgAAMAAAAAAAAAAAAAAAAAAEAAAAAD57Dj56PgAAJwAAAD55sz55swAAIwAAAAAAAAAAAAAAAAAACAAAAD54qz56jAAAGgAAAD55wD55wAAACQAAAAAAAAAAAAAAIAAAAAAADQAABNBfMAAAAAAAAD55zT55zQAACQAAAAAAAAAAAAAAAAAABAABKwAABNBfMAAAAAAAAD552j552gAACQAAAAAAAAAAAAAAABAAAAABOAAABNBfMAAAAAAAAD555z555wAASgAAAAAAAAAAAAAAAAAAAAAAAD558D558AAAQQAAAD559D559AAACQAAAAABAAAAAAAAAAAAAAAADQAABNBfMBhhVbYAAAAAXRSTlMAQObYZgAAAAlwSFlzAAALEgAACxIB0t1+/AAAAR5JREFUeNqdkelSwlAMhQ9wy+X2tqxlLbJTEFtRcSmoiDuCFnfF938QSytOq6Mzmj85k28mOUmAf0QgGCJECNOFpmGBkFAw4IAIE7nERXmhZUeyiAOi0tceUtRJhCMWTyRTSjqtpJKJeAycuEBERsnm8gVVLeRzWSUD0QUCBy1iBaVyuWSnIgUXHFCpolZvsKamqlqTNeo1VCsOoDJabaxCk2XNTu0WZLq0QTtrurHe3djUt3rbOx5/u3tm3+wO9s2epPcPvoFDDG195N3IbTUasmOcsNPP6sdw8QznF5fjqwmm1GdXvAZumGVXZhXfgvwWd2NrcA8Ygu8kndEDe8STPWNG/Ed8hjUBXl4xJ7+f3fuo6dx4my8f9eNr/xjv4IMgs1Yai0cAAAAASUVORK5CYII=" alt="" />
@@ -298,7 +376,7 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
   var controller = null;
   var signal = null;
   var zoomed = false;
-  var mints = -1
+  var mints = <?php echo $gmints;?>;
   var tracks = [];
   var QRCode = new QRCode("qrcode");
   function openPopup() {
@@ -329,7 +407,7 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
       attribution: 'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="http://viewfinderpanoramas.org">SRTM</a> | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)'
     });
     
-    let googleSat = L.tileLayer('http://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',{
+    let googleSat = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',{
       maxZoom: 20,
       subdomains:['mt0','mt1','mt2','mt3']
     });
@@ -370,9 +448,11 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
       if (typeof t.name !== 'string') {t.name='unknown';return;}
       let cible = window.tracks.find(tc => tc.name==t.name);
       if (!cible) {
+        t.pts.sort((a,b) => b.time-a.time);
         window.tracks.push(t);
       } else if (t.pts.length>0) {
         t.pts.forEach(pt => cible.pts.push(pt));
+        cible.pts.sort((a,b) => b.time-a.time);
       }
     });
     // suppression des traces qui n'existent plus
@@ -389,6 +469,7 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
         ucolors[t.name] = selectColor(window.index??0);
         window.index = (window.index??0)+5;
       }
+      if (t.pts.length>0 && t.pts[0].time > mints) mints = t.pts[0].time;
       let now = Date.now()/1000;
       if (!cboldtracks.checked) {
         t.pts = t.pts.filter(pt => (now-pt.time)<86400);//86400s==24h
@@ -408,7 +489,6 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
           removeNearCircle(t.name);
         }
       } else {
-        if (t.pts[0].time > mints) mints = t.pts[0].time;
         let segm = [t.pts];
         if (cbholetracks.checked) {
           segm = [];
@@ -430,10 +510,12 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
         });
         let alt = t.pts[0].alt;
         if (typeof alt !== 'number') alt = '';
-        else alt = `<BR>${Math.round(alt*10)/10}m`;
+        else alt = ` à ${Math.round(alt*10)/10}m`;
         let date = new Date(t.pts[0].time*1000);
-        date = `${date.toLocaleString()} (${Math.round((now-date.getTime()/1000)/60)}min)`;
-        let pptext = `<a href="${rootfolder}/filter/${t.name}" title="filtrer pour cet utilisateur">${t.name}</a> @ ${date}${alt} <a href="#" onclick="downloadGPX('${t.name}')">GPX</a>`;
+        //date = `${date.toLocaleString()} (${Math.round((now-date.getTime()/1000)/60)}min)`;
+        date = `${date.toLocaleString()} (il y a ${secondsToString(now-date.getTime()/1000)})`;
+        let shareicon = '<'+'?xml version="1.0" encoding="iso-8859-1"?><svg fill="#000000" height="12px" width="12px" version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"  viewBox="0 0 458.624 458.624" xml:space="preserve"><g><g><path d="M339.588,314.529c-14.215,0-27.456,4.133-38.621,11.239l-112.682-78.67c1.809-6.315,2.798-12.976,2.798-19.871 c0-6.896-0.989-13.557-2.798-19.871l109.64-76.547c11.764,8.356,26.133,13.286,41.662,13.286c39.79,0,72.047-32.257,72.047-72.047 C411.634,32.258,379.378,0,339.588,0c-39.79,0-72.047,32.257-72.047,72.047c0,5.255,0.578,10.373,1.646,15.308l-112.424,78.491 c-10.974-6.759-23.892-10.666-37.727-10.666c-39.79,0-72.047,32.257-72.047,72.047s32.256,72.047,72.047,72.047 c13.834,0,26.753-3.907,37.727-10.666l113.292,79.097c-1.629,6.017-2.514,12.34-2.514,18.872c0,39.79,32.257,72.047,72.047,72.047 c39.79,0,72.047-32.257,72.047-72.047C411.635,346.787,379.378,314.529,339.588,314.529z"/></g></g></svg>';
+        let pptext = `Dernière position pour <a href="${rootfolder}/filter/${t.name}" title="filtrer pour cet utilisateur">${t.name}</a> @ ${date}<BR>position : <a href="#" onclick="sharePos('${t.name}')" title="partager la position">${Math.round(t.pts[0].lat*10000)/10000} / ${Math.round(t.pts[0].lon*10000)/10000}${alt}</a><BR> <a href="#" onclick="downloadGPX('${t.name}')">GPX</a>&nbsp;&nbsp;&nbsp;<a href="#" onclick="sharePos('${t.name}')" title="partager la position">${shareicon}</a>`;
         if (user == t.name) pptext += '<BR><a href="<?php echo $ROOTFOLDER;?>">supprimer le filtre sur cet utilisateur</a>';
         if (Object.hasOwn(umarkers, t.name)) umarkers[t.name].setLatLng(segm[0][0]).setPopupContent(pptext);
         else {
@@ -493,6 +575,15 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
     }
     return time;
   }
+  function secondsToString(secs) {
+    if (secs<60)
+      return secs + ' seconde(s)';
+    if (secs<3600)
+      return Math.round(secs/60) + ' minute(s)';
+    if (secs<86400) // 24h
+      return Math.round(secs/3600) + ' heure(s)';
+    return Math.round(secs/86400) + ' jour(s)';
+  }
   function downloadFile(fileName, bytes, mime) {
     let blob = new Blob([bytes], { type: mime });
     let link = document.createElement('a');
@@ -507,6 +598,28 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
     if (!pts) return;
     let data = prefix+pts.map(pt => `<trkpt lat="${pt.lat}" lon="${pt.lon}"><time>${timestampToDate(pt.time)}</time><ele>${pt.alt}</ele></trkpt>`)+suffix;
     downloadFile(user+'.gpx', data, 'application/gpx+xml');
+  }
+  function sharePos(user) {
+    let pts = tracks.find(t => t.name == user)?.pts;
+    if (pts && pts.length <= 0) return;
+    let pt = pts[0];
+    //https://www.google.com/maps/search/?api=1&query=lat,lon
+    //console.log(JSON.stringify(pt));
+    //{"time":1704730814,"lat":44.94515645317733,"lon":5.6191750802099705,"alt":824.1051}
+    let urlggmaps = `https://www.google.com/maps/search/?api=1&query=${pt.lat},${pt.lon}`;
+    let ggmaps = () => {
+      try {
+        window.open(urlggmaps, '_blank').focus();
+      } catch(err) {
+        console.log(err);
+        window.location = urlggmaps;
+      }
+    }
+    navigator.permissions.query({ name: "clipboard-write" }).then((result) => {
+      if (result.state === "granted" || result.state === "prompt") {
+        navigator.clipboard.writeText(`latitude : ${pt.lat}\nlongitude : ${pt.lon}\n\n`+urlggmaps).then(null, ggmaps);
+      } else ggmaps();
+    });
   }
   function openQR() {
     qrres.style.display = 'none';
@@ -598,7 +711,7 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
   function resetmints() {
     if (window.controller) controller.abort();
     launchFetchLoop();
-    mints=-1;
+    mints=<?php echo $gmints;?>;
   }
   function launchFetchLoop() {
     if (window.fetchtimer) window.clearTimeout(fetchtimer);
