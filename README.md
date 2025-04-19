@@ -3,11 +3,12 @@
 
 ## Installation
 ### Server Side PHP script
- - Put /web folder online (the ``index.php`` script can be put anywhere).
- - Create a "users.txt" file in the same folder than ``index.php``. Inside put users : each line represents an username and a md5 hash of password separated by a colon :
+ - Put /web folder online (the ``index.php`` script can be put anywhere). **Don't forget the .htaccess file !!!**
+ - Create a "users.txt" file in the same folder that ``index.php``. Inside put users : each line represents an username and a md5 hash of password separated by a colon :
 ```
 user:5f4dcc3b5aa765d61d8327deb882cf99
 ```
+
 ### Android Client
  - Compile/package/sign android app
  - Start the app and go to settings, fill in the username/password fields and click save. To start the livetracking click on the bottom "play" button

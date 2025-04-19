@@ -134,7 +134,6 @@ function update_user($user, $hash, $points) {
   //fastcgi_finish_request();//required for PHP-FPM (PHP > 5.3.3)
   // fin réponse avant la fin du traitement
 
-  $userfilepath = joinPaths(array(TRACKFOLDER, $user.".txt"));
   $pts="";
   for ($i=0; $i<count($points); $i++) {
     if (substr_count($points[$i], ',') > 1 || (substr_count($points[$i], ',') > 0 && substr_count($points[$i], '.') > 0)) str_replace(',', '', $points[$i]);
@@ -144,8 +143,13 @@ function update_user($user, $hash, $points) {
   for ($i=0; $i<count($points); $i+=4) {
     $pts .= $points[$i+3].",".$points[$i].",".$points[$i+1].",".$points[$i+2].PHP_EOL;
   }
+  $userfilepath = joinPaths(array(TRACKFOLDER, $user.".txt"));
   if (!file_exists(TRACKFOLDER)) {
     mkdir(TRACKFOLDER, 0777, true);
+  }
+  // >10Mo ==> on archive
+  if (file_exists($userfilepath) && filesize($userfilepath) > 10000000) {
+    rename($userfilepath, $userfilepath.time());
   }
   file_put_contents($userfilepath, $pts , FILE_APPEND | LOCK_EX);
   echo "OK";

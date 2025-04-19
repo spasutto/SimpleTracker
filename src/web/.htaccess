@@ -3,6 +3,10 @@
   Deny from all
 </FilesMatch>
 
+<If "%{REQUEST_URI} =~ m#/tracks/#">
+  Deny from all
+</If>
+
 Options +FollowSymlinks -MultiViews
 RewriteEngine On
 
