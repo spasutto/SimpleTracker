@@ -19,11 +19,13 @@ First, read the section above to install [SimpleTracker PHP script](#Server-Side
 
 Goto settings->integration->mapmytracks and provide url :
 ```
-  https://URL.TO/FOLDER/USER/HASH/
+  https://URL.TO/FOLDER/update/USER/HASH/
 ```
  - **URL.TO/FOLDER** must be the folder where you put the ``index.php`` script.
-
+ - **/update/** portion is mandatory !
  - **USER** and **HASH** can be found in the `users.txt` file
+
+Example : http://example.net/my_little_tracker/update/bobby/5f4dcc3b5aa765d61d8327deb882cf99
 
 To use livetracking with OruxMaps you must first start the recording of a track, then in the left menu "livetracking" check the "mapsmytrack" checkbox. You can also in the settings turn on the automatic livetracking.
 
