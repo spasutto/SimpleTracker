@@ -287,18 +287,23 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
     padding:0px;
     font-family: 'Lato', sans-serif;
   }
-   #map{
-     position: absolute;
-     top: 30px;
-     bottom: 0;
-     width: 100%;
-   }
-   label {margin-right:10px;}
-   input[type='checkbox'] {margin-top:5px;}
-   #qr {
-     position: absolute;
-     cursor:pointer;
-   }
+  #map{
+    position: absolute;
+    top: 30px;
+    bottom: 0;
+    width: 100%;
+  }
+  label {margin-right:10px;}
+  input[type='checkbox'] {margin-top:5px;}
+  #qr {
+    position: absolute;
+    cursor:pointer;
+  }
+  #iload {
+    display: none;
+    position: absolute;
+    top:0;right:0;
+  }
    
 .overlay {
   height: 100%;
@@ -368,6 +373,7 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
   <input type="checkbox" name="cbfollow" id="cbfollow" onclick="if (this.checked) cbcadrer.checked=false; else map.closePopup();" checked><label for="cbfollow">suivre</label>
   <input type="checkbox" name="cbcadrer" id="cbcadrer" onclick="if (this.checked) cbfollow.checked=false;else map.closePopup();"><label for="cbcadrer">cadrer</label>
   <img id="qr" onclick="openQR()" title="Obtenir l'URL du tracker" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAMAAADXqc3KAAADAFBMVEX+/v7d3d1GRkYMDAwKCgoLCwsJCQkxMTFBQUEAAABTU1NVVVVUVFR2dnYICAh+fn4wMDApKSklJSUqKio4ODiwsLAvLy+NjY2QkJCKiooaGhpzc3OLi4usrKxQUFB1dXUCAgJNTU0uLi6IiIimpqbOzs5PT08yMjKJiYnT09MbGxtYWFhaWlpXV1cFBQVycnJ0dHQGBgZeXl5cXFwcHBwzMzOurq5vb29sbGxoaGjMzMzFxcWnp6fExMTW1tbZ2dlqamqPj4+7u7uVlZVlZWWYmJjLy8vGxsbR0dGamprV1dV3d3ddXV3Nzc2enp5RUVFjY2O+vr7AwMDY2NiTk5PBwcGoqKicnJzU1NRWVlZSUlIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAD56wD56wAAAGgAAAD55jD55jAAAFgAAAAAEAAAAAAAAAAAAAAAAAD56JD558AAADQAAAD55mT55mQAACQAAAAAAQAAAAAAAAAAAAAAA0AAABNBfMAAAAAAAAD55pj55pgAAMAAAAAAAAAAAAAAAAAAEAAAAAD57Dj56PgAAJwAAAD55sz55swAAIwAAAAAAAAAAAAAAAAAACAAAAD54qz56jAAAGgAAAD55wD55wAAACQAAAAAAAAAAAAAAIAAAAAAADQAABNBfMAAAAAAAAD55zT55zQAACQAAAAAAAAAAAAAAAAAABAABKwAABNBfMAAAAAAAAD552j552gAACQAAAAAAAAAAAAAAABAAAAABOAAABNBfMAAAAAAAAD555z555wAASgAAAAAAAAAAAAAAAAAAAAAAAD558D558AAAQQAAAD559D559AAACQAAAAABAAAAAAAAAAAAAAAADQAABNBfMBhhVbYAAAAAXRSTlMAQObYZgAAAAlwSFlzAAALEgAACxIB0t1+/AAAAR5JREFUeNqdkelSwlAMhQ9wy+X2tqxlLbJTEFtRcSmoiDuCFnfF938QSytOq6Mzmj85k28mOUmAf0QgGCJECNOFpmGBkFAw4IAIE7nERXmhZUeyiAOi0tceUtRJhCMWTyRTSjqtpJKJeAycuEBERsnm8gVVLeRzWSUD0QUCBy1iBaVyuWSnIgUXHFCpolZvsKamqlqTNeo1VCsOoDJabaxCk2XNTu0WZLq0QTtrurHe3djUt3rbOx5/u3tm3+wO9s2epPcPvoFDDG195N3IbTUasmOcsNPP6sdw8QznF5fjqwmm1GdXvAZumGVXZhXfgvwWd2NrcA8Ygu8kndEDe8STPWNG/Ed8hjUBXl4xJ7+f3fuo6dx4my8f9eNr/xjv4IMgs1Yai0cAAAAASUVORK5CYII=" alt="" />
+  <svg id="iload" width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" title="chargement en cours..."><path d="M10.14,1.16a11,11,0,0,0-9,8.92A1.59,1.59,0,0,0,2.46,12,1.52,1.52,0,0,0,4.11,10.7a8,8,0,0,1,6.66-6.61A1.42,1.42,0,0,0,12,2.69h0A1.57,1.57,0,0,0,10.14,1.16Z"><animateTransform attributeName="transform" type="rotate" dur="0.75s" values="0 12 12;360 12 12" repeatCount="indefinite"/></path></svg>
   <BR>
   <div id="map"></div>
   <script>
@@ -383,6 +389,7 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
   var mints = <?php echo $gmints;?>;
   var tracks = [];
   var QRCode = new QRCode("qrcode");
+  var tofetch = null;
   function openPopup() {
     ovl.style.width = "100%";
     document.getElementById("map").style.display='none';
@@ -432,8 +439,11 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
     }
     L.control.layers(baseMaps, null, {position: 'topleft'}).addTo(map);
   }
-  async function fetchTracks() {
-    if (!loadtracksdone) controller.abort();
+  async function fetchTracks(forcestop) {
+    if (forcestop && !loadtracksdone) {
+      controller.abort();
+    } else if (!loadtracksdone) return;
+    document.getElementById('iload').style.display = 'block';
     window.controller = new AbortController();
     signal = controller.signal;
     loadtracksdone = false;
@@ -441,10 +451,12 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
     .then(r=>r.json())
     .then(updateTracks)
     .catch((err) => {
-      if (err?.message != 'The user aborted a request.')
+      if (err?.message != 'The user aborted a request.' && err?.message != 'signal is aborted without reason')
         console.error(`fetchTracks error: ${err.message}`);
     });
-    window.setTimeout(fetchTracks, 5000);
+    document.getElementById('iload').style.display = 'none';
+    //await delay(5000);
+    //fetchTracks();
   }
   function updateTracks(data) {
     loadtracksdone = true;
@@ -655,7 +667,7 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
         else alert(data);
       })
       .catch((err) => {
-        alert(`fetchTracks error: ${err.message}`);
+        alert(`QR error: ${err.message}`);
       });
     }
   }
@@ -713,14 +725,19 @@ if (isset($_REQUEST['operation']) && strlen($op = trim($_REQUEST['operation']))>
       nearcircle.setTooltipContent(mktxt);
     }
   }
+  async function launchFetchTracks() {
+    window.clearInterval(tofetch);
+    tofetch = window.setInterval(fetchTracks, 5000);
+    fetchTracks(true);
+  }
   function resetmints() {
-    fetchTracks();
+    launchFetchTracks();
     mints=<?php echo $gmints;?>;
   }
 
   //console.log(distance(44.79271 , 5.612266, 44.800738 , 5.580474));//2.66km
   loadMap();
-  fetchTracks();
+  launchFetchTracks();
   </script>
 </body>
 </html>
