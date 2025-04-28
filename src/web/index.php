@@ -216,7 +216,7 @@ function geturl($user, $pwd) {
 }
 function isExcluded($pt, $exclusions) {
   $nbrexclusions = count($exclusions);
-  for ($i=0; $i<$nbrexclusions; $i+=3) {
+  for ($i=0; $i<$nbrexclusions; $i++) {
     if (distance($pt->lat, $pt->lon, $exclusions[$i][0], $exclusions[$i][1]) < $exclusions[$i][2]) {
       //echo distance($pt->lat, $pt->lon, $exclusions[$i][0], $exclusions[$i][1]);
       //var_dump($exclusions);
